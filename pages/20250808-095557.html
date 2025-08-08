@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>霓虹对撞机 (Neon Collider)</title>
+  <style>
+    :root{
+      --bg:#06070A;
+      --panel:#0E1016;
+      --accent:#24D1FF;
+      --accent2:#FF2ED1;
+      --ok:#47FFA0;
+      --warn:#FFD34E;
+      --text:#E8F1FF;
+    }
+    html,body{height:100%;}
+    body{
+      margin:0; background: radial-gradient(1200px 800px at 70% 20%, #0c0f18 0%, #07080d 40%, #05060a 100%);
+      color:var(--text); font: 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, "PingFang SC", "Microsoft YaHei", sans-serif;
+      display:grid; grid-template-rows:auto 1fr; overflow:hidden;
+    }
+    header{
+      padding:12px clamp(10px, 3vw, 24px); display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+      background: linear-gradient(180deg, rgba(76, 0, 255, 0.12), rgba(0,0,0,0));
+      border-bottom:1px solid rgba(255,255,255,0.08);
+    }
+    header h1{font-size: clamp(16px, 2vw, 20px); margin:0; letter-spacing:0.5px; display:flex; align-items:center; gap:10px}
+    .badge{font-size:12px; padding:3px 8px; border-radius:999px; background:rgba(36,209,255,0.15); color:var(--accent); border:1px solid rgba(36,209,255,0.35)}
+
+    .panel{
+      display:flex; gap:16px; align-items:center; flex-wrap:wrap; margin-left:auto;
+    }
+    .ctrl{background:var(--panel); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:8px 12px; display:flex; align-items:center; gap:10px; box-shadow:0 6px 30px rgba(0,0,0,0.35)}
+    .ctrl label{opacity:0.85}
+    .ctrl input[type="range"]{ accent-color: var(--accent); width:160px}
+    .ctrl .out{min-width:48px; text-align:right; font-variant-numeric: tabular-nums}
+    button{
+      background:linear-gradient(180deg, rgba(36,209,255,0.15), rgba(36,209,255,0.05));
+      color:var(--text); border:1px solid rgba(36,209,255,0.45); padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:600; letter-spacing:0.3px;
+      box-shadow: 0 0 24px rgba(36,209,255,0.15), inset 0 0 22px rgba(36,209,255,0.08);
+    }
+    button:hover{ transform: translateY(-1px); box-shadow: 0 8px 28px rgba(36,209,255,0.25), inset 0 0 22px rgba(36,209,255,0.12);}
+    button.secondary{ background: linear-gradient(180deg, rgba(255,46,209,0.15), rgba(255,46,209,0.05)); border-color: rgba(255,46,209,0.45); box-shadow: 0 0 24px rgba(255,46,209,0.15), inset 0 0 22px rgba(255,46,209,0.08); }
+    button.secondary:hover{ box-shadow: 0 8px 28px rgba(255,46,209,0.25), inset 0 0 22px rgba(255,46,209,0.12);}
+
+    main{ position:relative; }
+    canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+    .hint{ position: absolute; right: 14px; bottom: 12px; font-size: 12px; opacity: 0.7; }
+
+    details.adv{ margin-left: 8px; }
+    details.adv > summary{ cursor:pointer; opacity:0.85 }
+    .adv .group{ display:flex; gap:10px; align-items:center; background:var(--panel); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:8px 12px; margin-top:6px }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>霓虹对撞机 <span class="badge">Neon Collider · HTML5 Canvas</span></h1>
+    <div class="panel">
+      <div class="ctrl">
+        <label>旋转速度</label>
+        <input id="rot" type="range" min="-3" max="3" step="0.01" value="0.8" />
+        <span class="out" id="rotOut">0.80</span><span>rad/s</span>
+      </div>
+      <div class="ctrl">
+        <label>容器大小</label>
+        <input id="size" type="range" min="120" max="360" step="1" value="240" />
+        <span class="out" id="sizeOut">240</span><span>px</span>
+      </div>
+      <div class="ctrl">
+        <label>小球半径</label>
+        <input id="radius" type="range" min="6" max="30" step="1" value="12" />
+        <span class="out" id="radiusOut">12</span><span>px</span>
+      </div>
+      <button id="pauseBtn">暂停</button>
+      <button id="resetBtn" class="secondary">重置</button>
+      <details class="adv">
+        <summary>高级</summary>
+        <div class="group">
+          <label>恢复系数</label>
+          <input id="restit" type="range" min="0" max="1" step="0.01" value="0.90" />
+          <span class="out" id="restitOut">0.90</span>
+        </div>
+        <div class="group">
+          <label>切向摩擦</label>
+          <input id="fric" type="range" min="0" max="1" step="0.01" value="0.15" />
+          <span class="out" id="fricOut">0.15</span>
+        </div>
+      </details>
+    </div>
+  </header>
+  <main>
+    <canvas id="c"></canvas>
+    <div class="hint">拖动滑块 → 立即生效 · 撞击会生成火花 ✨</div>
+  </main>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  // ---- DPR-aware sizing ----
+  const state = {
+    width: 0, height: 0, dpr: 1,
+    center: {x:0, y:0}
+  };
+  function resize(){
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    state.dpr = dpr;
+    const {clientWidth: w, clientHeight: h} = canvas;
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0); // draw in CSS pixels
+    state.width = w; state.height = h; state.center.x = w/2; state.center.y = h/2;
+  }
+  const ro = new ResizeObserver(resize); ro.observe(canvas);
+  window.addEventListener('resize', resize);
+
+  // ---- Controls ----
+  const $ = (id) => document.getElementById(id);
+  const rot = $('rot'), size = $('size'), radius = $('radius');
+  const rotOut = $('rotOut'), sizeOut = $('sizeOut'), radiusOut = $('radiusOut');
+  const restit = $('restit'), fric = $('fric');
+  const restitOut = $('restitOut'), fricOut = $('fricOut');
+  const pauseBtn = $('pauseBtn'), resetBtn = $('resetBtn');
+
+  const params = {
+    omega: parseFloat(rot.value),
+    hexR: parseFloat(size.value),
+    ballR: parseFloat(radius.value),
+    e: parseFloat(restit.value),
+    mu: parseFloat(fric.value)
+  };
+  const syncOuts = () => {
+    rotOut.textContent = params.omega.toFixed(2);
+    sizeOut.textContent = params.hexR.toFixed(0);
+    radiusOut.textContent = params.ballR.toFixed(0);
+    restitOut.textContent = params.e.toFixed(2);
+    fricOut.textContent = params.mu.toFixed(2);
+  };
+  [rot,size,radius,restit,fric].forEach(inp=>{
+    inp.addEventListener('input', () => {
+      params.omega = parseFloat(rot.value);
+      params.hexR = parseFloat(size.value);
+      params.ballR = parseFloat(radius.value);
+      params.e = parseFloat(restit.value);
+      params.mu = parseFloat(fric.value);
+      syncOuts();
+    });
+  });
+
+  // ---- Math helpers ----
+  const V = {
+    add:(a,b)=>({x:a.x+b.x,y:a.y+b.y}),
+    sub:(a,b)=>({x:a.x-b.x,y:a.y-b.y}),
+    mul:(a,s)=>({x:a.x*s,y:a.y*s}),
+    dot:(a,b)=>a.x*b.x+a.y*b.y,
+    len:(a)=>Math.hypot(a.x,a.y),
+    norm:(a)=>{const l=Math.hypot(a.x,a.y)||1; return {x:a.x/l,y:a.y/l};},
+    perp:(a)=>({x:-a.y,y:a.x}),
+    clamp:(x,lo,hi)=>Math.max(lo,Math.min(hi,x))
+  };
+  function closestPointOnSegment(p, a, b){
+    const ab = V.sub(b,a);
+    const t = V.clamp( V.dot(V.sub(p,a), ab) / (ab.x*ab.x + ab.y*ab.y), 0, 1 );
+    return {x: a.x + ab.x*t, y: a.y + ab.y*t, t};
+  }
+
+  // ---- World objects ----
+  const world = {
+    theta: 0, // current angle of hexagon
+    ball: {
+      pos: {x:0,y:0},
+      vel: {x:160, y:-120}, // px/s initial velocity
+    },
+    trails: [],
+    sparks: [],
+    running: true
+  };
+
+  function resetBall(){
+    world.ball.pos = {x: state.center.x, y: state.center.y};
+    // random small offset to avoid degenerate center-only motion
+    world.ball.pos.x += (Math.random()-0.5)*params.hexR*0.2;
+    world.ball.pos.y += (Math.random()-0.5)*params.hexR*0.2;
+    const speed = 200 + Math.random()*140;
+    const ang = Math.random()*Math.PI*2;
+    world.ball.vel = {x: Math.cos(ang)*speed, y: Math.sin(ang)*speed};
+  }
+
+  // Initialize
+  resize();
+  syncOuts();
+  resetBall();
+
+  // ---- Hexagon geometry ----
+  function hexVertices(){
+    const r = params.hexR;
+    const verts = [];
+    for(let i=0;i<6;i++){
+      const a = world.theta + i * Math.PI/3; // 60° step
+      verts.push({ x: state.center.x + r*Math.cos(a), y: state.center.y + r*Math.sin(a) });
+    }
+    return verts;
+  }
+
+  function wallVelocityAt(point){
+    // v = ω × r, in 2D -> ω * perp(r)
+    const rel = V.sub(point, state.center);
+    const pv = V.perp(rel);
+    return V.mul(pv, params.omega); // px/s
+  }
+
+  // ---- Particles ----
+  class Particle{
+    constructor(x,y,vx,vy,life,size,hue,glow=1){
+      this.x=x; this.y=y; this.vx=vx; this.vy=vy; this.life=life; this.t=0; this.size=size; this.hue=hue; this.glow=glow;
+    }
+    update(dt){
+      this.t += dt; this.x += this.vx*dt; this.y += this.vy*dt;
+      // slight fade/drag
+      this.vx *= 0.995; this.vy *= 0.995; this.vy += 8*dt; // tiny gravity for sparks
+      return this.t < this.life;
+    }
+    draw(ctx){
+      const k = 1 - this.t/this.life;
+      const alpha = Math.max(0, k);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.shadowBlur = 20*this.glow*k + 4;
+      ctx.shadowColor = `hsla(${this.hue},100%,60%,${alpha})`;
+      ctx.fillStyle = `hsla(${this.hue},100%,70%,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size*k, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  function spawnTrail(){
+    const b = world.ball;
+    const speed = V.len(b.vel);
+    const lifetime = 0.35 + Math.min(0.25, speed/1200);
+    const spread = 20 + Math.min(30, speed*0.05);
+    for(let i=0;i<2;i++){
+      const ang = Math.atan2(-b.vel.y, -b.vel.x) + (Math.random()-0.5)*0.6;
+      const mag = (Math.random()*spread + 30);
+      world.trails.push(new Particle(
+        b.pos.x, b.pos.y,
+        Math.cos(ang)*mag, Math.sin(ang)*mag,
+        lifetime, 3+Math.random()*2, 190 + Math.random()*40, 1.4
+      ));
+    }
+  }
+
+  function spawnSparks(contact, energy, n, vRelBefore){
+    // energy ~ 0.5*vn^2 ; map to count/brightness
+    const count = Math.min(70, 6 + Math.floor(energy*120));
+    const baseHue = 280 + Math.random()*40; // magenta/blue-ish
+    const reflDir = V.sub( V.mul(n, 2* V.dot(V.mul(vRelBefore,-1), n)), V.mul(vRelBefore,-1) );
+    for(let i=0;i<count;i++){
+      const jitter = (Math.random()-0.5)*Math.PI/2;
+      const ang = Math.atan2(reflDir.y, reflDir.x) + jitter;
+      const speed = 80 + Math.random()* (200*Math.min(1, energy*2+0.2));
+      const life = 0.25 + Math.random()*0.6;
+      world.sparks.push(new Particle(
+        contact.x, contact.y,
+        Math.cos(ang)*speed, Math.sin(ang)*speed,
+        life, 1.6+Math.random()*2.2, baseHue + (Math.random()*40-20), 2.2
+      ));
+    }
+  }
+
+  // ---- Collision / physics with moving walls ----
+  function resolveCollisions(verts, dt){
+    const b = world.ball;
+    for(let i=0;i<6;i++){
+      const a = verts[i], c = verts[(i+1)%6];
+      const cp = closestPointOnSegment(b.pos, a, c);
+      const toBall = V.sub(b.pos, {x:cp.x, y:cp.y});
+      const dist = V.len(toBall);
+      if(dist < params.ballR - 0.0001){
+        // Compute contact normal (from wall -> ball)
+        let n = dist>1e-6 ? V.norm(toBall) : (()=>{
+          // Degenerate: use edge inward normal
+          const edge = V.sub(c,a);
+          const en = V.norm({x: edge.y, y: -edge.x}); // one of the two normals
+          // Choose the one pointing towards center -> ball
+          return en; })();
+
+        // Position correction (push ball out of the wall)
+        const penetration = params.ballR - dist;
+        const correction = V.mul(n, penetration + 0.0005);
+        b.pos = V.add(b.pos, correction);
+
+        // Relative velocity at contact (ball w.r.t. moving wall)
+        const contactPoint = {x:cp.x, y:cp.y};
+        const vw = wallVelocityAt(contactPoint);
+        const vrel = V.sub(b.vel, vw);
+        const vn = V.dot(vrel, n);
+
+        if(vn < 0){
+          const e = params.e; // restitution
+          const mu = params.mu; // friction coefficient
+
+          // Normal impulse (mass of ball = 1, wall infinite)
+          const Jn = -(1+e) * vn; // scalar
+
+          // Tangential
+          const vt = V.sub(vrel, V.mul(n, vn));
+          const vtLen = V.len(vt);
+          let Jt = 0;
+          if(vtLen > 1e-6){
+            // Coulomb friction cap
+            const maxF = mu * Math.abs(Jn);
+            Jt = -Math.min(maxF, vtLen);
+          }
+          const tHat = vtLen>1e-6 ? V.mul(vt, 1/vtLen) : {x:0,y:0};
+
+          // Apply impulses to relative velocity then add back wall velocity
+          let vrelPost = V.add(vrel, V.mul(n, Jn));
+          vrelPost = V.add(vrelPost, V.mul(tHat, Jt));
+          b.vel = V.add(vrelPost, vw);
+
+          // Sparks based on impact energy (pre-collision normal speed)
+          const impactEnergy = 0.5 * vn*vn; // m=1
+          spawnSparks(contactPoint, impactEnergy, n, vrel);
+        }
+      }
+    }
+  }
+
+  // ---- Rendering ----
+  function drawNeonHex(verts){
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Outer glow
+    ctx.beginPath();
+    verts.forEach((p,i)=> i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
+    ctx.closePath();
+    ctx.strokeStyle = 'rgba(36,209,255,0.35)';
+    ctx.lineWidth = 18; ctx.lineJoin='round';
+    ctx.shadowBlur = 28; ctx.shadowColor = 'rgba(36,209,255,0.8)';
+    ctx.stroke();
+
+    // Inner bright core
+    ctx.strokeStyle = 'rgba(255,46,209,0.6)';
+    ctx.lineWidth = 3.5; ctx.shadowBlur = 16; ctx.shadowColor = 'rgba(255,46,209,0.9)';
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawBall(){
+    const b = world.ball; const r = params.ballR;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const grad = ctx.createRadialGradient(b.pos.x - r*0.3, b.pos.y - r*0.3, r*0.2, b.pos.x, b.pos.y, r);
+    grad.addColorStop(0, 'rgba(255,255,255,0.95)');
+    grad.addColorStop(0.25, 'rgba(120,220,255,0.9)');
+    grad.addColorStop(1, 'rgba(30, 80, 255, 0.15)');
+    ctx.fillStyle = grad;
+    ctx.shadowColor = 'rgba(120,220,255,0.9)';
+    ctx.shadowBlur = 25;
+    ctx.beginPath();
+    ctx.arc(b.pos.x, b.pos.y, r, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawParticles(list){
+    for(let p of list){ p.draw(ctx); }
+  }
+
+  // ---- Main loop ----
+  let last = performance.now();
+  function frame(now){
+    const dt = Math.min(0.033, (now - last)/1000); // clamp to 30ms
+    last = now;
+    if(world.running){
+      world.theta += params.omega * dt;
+      // integrate ball
+      world.ball.pos.x += world.ball.vel.x * dt;
+      world.ball.pos.y += world.ball.vel.y * dt;
+    }
+
+    const verts = hexVertices();
+    if(world.running){
+      resolveCollisions(verts, dt);
+      spawnTrail();
+    }
+
+    // Clear
+    ctx.setTransform(state.dpr,0,0,state.dpr,0,0); // ensure DPR
+    ctx.clearRect(0,0,state.width, state.height);
+    ctx.fillStyle = 'rgba(2,3,6,0.9)';
+    ctx.fillRect(0,0,state.width, state.height);
+
+    // Draw order: trails -> sparks -> hex -> ball -> subtle scanlines
+    world.trails = world.trails.filter(p=>p.update(dt));
+    world.sparks = world.sparks.filter(p=>p.update(dt));
+    drawParticles(world.trails);
+    drawParticles(world.sparks);
+    drawNeonHex(verts);
+    drawBall();
+
+    // Scanlines & vignette for cyber vibe
+    ctx.save();
+    const grad = ctx.createRadialGradient(state.center.x, state.center.y, Math.min(state.width,state.height)*0.2, state.center.x, state.center.y, Math.max(state.width,state.height)*0.75);
+    grad.addColorStop(0,'rgba(0,0,0,0)'); grad.addColorStop(1,'rgba(0,0,0,0.25)');
+    ctx.fillStyle = grad; ctx.fillRect(0,0,state.width,state.height);
+    ctx.globalAlpha = 0.055;
+    for(let y=0; y<state.height; y+=2){ ctx.fillStyle = '#000'; ctx.fillRect(0,y,state.width,1); }
+    ctx.restore();
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---- UI wiring ----
+  pauseBtn.addEventListener('click', () => {
+    world.running = !world.running; pauseBtn.textContent = world.running ? '暂停' : '继续';
+  });
+  resetBtn.addEventListener('click', () => { resetBall(); });
+
+})();
+</script>
+</body>
+</html>
